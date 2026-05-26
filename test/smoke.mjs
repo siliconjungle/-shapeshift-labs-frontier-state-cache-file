@@ -55,11 +55,13 @@ try {
       { __typename: 'Todo', id: '1', text: 'ship', done: false }
     ]);
     await persistence.flush();
+    assert.deepStrictEqual((await storage.readChangeLog()).map((entry) => entry.seq), [1, 2]);
 
     source.modifyEntity('Todo:1', (todo) => ({ ...todo, text: 'draft' }));
     assert.strictEqual((await storage.load()).queries[0].value[0].text, 'ship');
     await persistence.flush();
     assert.strictEqual((await storage.load()).queries[0].value[0].text, 'draft');
+    assert.deepStrictEqual((await storage.readChangeLog()).map((entry) => entry.seq), [1, 2, 3, 4]);
 
     const restored = createQueryCache();
     const restoredPersistence = persistQueryCache(restored, storage);
@@ -68,11 +70,18 @@ try {
       { __typename: 'Todo', id: '1', text: 'draft', done: false }
     ]);
 
+    const next = createQueryCache();
+    const nextPersistence = persistQueryCache(next, storage, { debounceMs: 1000 });
+    next.writeQuery(['todo', 2], { __typename: 'Todo', id: '2', text: 'next' });
+    await nextPersistence.flush();
+    assert.deepStrictEqual((await storage.readChangeLog()).map((entry) => entry.seq), [1, 2, 3, 4, 5, 6]);
+
     await restoredPersistence.clear();
     assert.strictEqual(await storage.load(), null);
 
     persistence.dispose();
     restoredPersistence.dispose();
+    nextPersistence.dispose();
     await storage.destroy();
   }
 
